@@ -1,25 +1,23 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'; // TAMBAH: useCallback dan useMemo
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   TextInput,
   Button,
   StyleSheet,
-  // HAPUS: SafeAreaView dari sini
   FlatList,
   Alert,
   Platform,
   KeyboardAvoidingView,
-  ScrollView, // Kita butuh ini untuk layar login
+  ScrollView,
 } from 'react-native';
-// TAMBAH: Impor SafeAreaView dari library yang benar
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // --- IMPORT FIREBASE ---
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import {
-  initializeAuth, // Ganti dari getAuth
-  getReactNativePersistence, // Untuk menyimpan login
+  initializeAuth,
+  getReactNativePersistence,
   onAuthStateChanged,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -34,12 +32,9 @@ import {
   query,
 } from 'firebase/firestore';
 
-// TAMBAH: Impor AsyncStorage
-import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
-
 // --- IMPORT MMKV (Sintaks V4/V3) ---
 import { createMMKV } from 'react-native-mmkv';
-export const storage = createMMKV(); // Pakai createMMKV()
+export const storage = createMMKV();
 
 // -----------------------------------------------------------------
 // --- KONFIGURASI FIREBASE ---
@@ -61,16 +56,31 @@ if (!getApps().length) {
   app = getApp();
 }
 
-// UBAH: Inisialisasi Auth dengan AsyncStorage agar login tersimpan
+// --- Adapter MMKV untuk Firebase Auth ---
+const mmkvStorageAdapter = {
+  setItem: (key: string, value: string) => {
+    storage.set(key, value);
+    return Promise.resolve();
+  },
+  getItem: (key: string) => {
+    const value = storage.getString(key);
+    return Promise.resolve(value !== undefined ? value : null);
+  },
+  removeItem: (key: string) => {
+    storage.delete(key);
+    return Promise.resolve();
+  },
+};
+
+// Inisialisasi Auth dengan ADAPTER MMKV
 const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(ReactNativeAsyncStorage),
+  persistence: getReactNativePersistence(mmkvStorageAdapter),
 });
 const db = getFirestore(app);
 
 // -----------------------------------------------------------------
-// --- PINDAH: Buat Komponen Header DI LUAR AppScreen ---
+// --- Komponen ListHeader (Untuk fix re-render input) ---
 // -----------------------------------------------------------------
-
 interface ListHeaderProps {
   userEmail: string | null;
   onLogout: () => void;
@@ -79,17 +89,12 @@ interface ListHeaderProps {
 
 // Ini adalah komponen terpisah yang mengelola state form-nya sendiri
 const ListHeader: React.FC<ListHeaderProps> = ({ userEmail, onLogout, onAdd }) => {
-  // PINDAH STATE FORM KE SINI
   const [nama, setNama] = useState('');
   const [nim, setNim] = useState('');
   const [jurusan, setJurusan] = useState('');
 
-  // Buat fungsi helper untuk handle press
   const handleAddPress = () => {
-    // Panggil fungsi onAdd (dari AppScreen) dengan data dari state internal ini
     onAdd(nama, nim, jurusan);
-
-    // Kosongkan form setelah submit
     setNama('');
     setNim('');
     setJurusan('');
@@ -106,27 +111,25 @@ const ListHeader: React.FC<ListHeaderProps> = ({ userEmail, onLogout, onAdd }) =
         <TextInput
           style={styles.input}
           placeholder="Nama Lengkap"
-          value={nama} // Baca dari state internal
-          onChangeText={setNama} // Tulis ke state internal
+          value={nama}
+          onChangeText={setNama}
         />
         <TextInput
           style={styles.input}
           placeholder="NIM"
-          value={nim} // Baca dari state internal
-          onChangeText={setNim} // Tulis ke state internal
+          value={nim}
+          onChangeText={setNim}
           keyboardType="numeric"
         />
         <TextInput
           style={styles.input}
           placeholder="Jurusan"
-          value={jurusan} // Baca dari state internal
-          onChangeText={setJurusan} // Tulis ke state internal
+          value={jurusan}
+          onChangeText={setJurusan}
         />
-        {/* Panggil helper internal */}
         <Button title="Simpan Data" onPress={handleAddPress} />
       </View>
 
-      {/* --- Judul Daftar Mahasiswa --- */}
       <Text style={styles.subtitle}>Daftar Mahasiswa</Text>
     </View>
   );
@@ -141,14 +144,9 @@ export default function AppScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mahasiswaList, setMahasiswaList] = useState<any[]>([]);
-  // HAPUS STATE FORM DARI SINI
-  // const [nama, setNama] = useState('');
-  // const [nim, setNim] = useState('');
-  // const [jurusan, setJurusan] = useState('');
 
   // --- LOGIC ---
 
-  // Cek status login
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -157,11 +155,9 @@ export default function AppScreen() {
     return () => unsubscribe();
   }, []);
 
-  // Ambil data jika sudah login
   useEffect(() => {
     if (user) {
       const q = query(collection(db, 'mahasiswa'));
-      // onSnapshot = Realtime listener
       const unsubscribe = onSnapshot(
         q,
         (snapshot) => {
@@ -176,13 +172,12 @@ export default function AppScreen() {
           Alert.alert("Error", "Gagal mengambil data dari Firestore.");
         }
       );
-      return () => unsubscribe(); // Berhenti listen saat unmount
+      return () => unsubscribe();
     } else {
-      setMahasiswaList([]); // Kosongkan list jika logout
+      setMahasiswaList([]);
     }
-  }, [user]); // Dijalankan ulang jika 'user' berubah
+  }, [user]);
 
-  // Fungsi Register (Tidak berubah)
   const handleRegister = async () => {
     if (email === '' || password === '') {
       Alert.alert('Error', 'Email dan Password tidak boleh kosong.');
@@ -196,7 +191,6 @@ export default function AppScreen() {
     }
   };
 
-  // Fungsi Login (Tidak berubah)
   const handleLogin = async () => {
     if (email === '' || password === '') {
       Alert.alert('Error', 'Email dan Password tidak boleh kosong.');
@@ -209,16 +203,14 @@ export default function AppScreen() {
     }
   };
 
-  // Fungsi Logout (Bungkus dengan useCallback agar stabil)
   const handleLogout = useCallback(async () => {
     try {
       await signOut(auth);
     } catch (error: any) {
       Alert.alert('Error Logout', error.message);
     }
-  }, []); // Dependency kosong, fungsi ini tidak akan pernah dibuat ulang
+  }, []);
 
-  // Fungsi Tambah Data (UBAH: Terima parameter dari ListHeader)
   const handleAddMahasiswa = useCallback(
     async (nama: string, nim: string, jurusan: string) => {
       if (nama === '' || nim === '' || jurusan === '') {
@@ -231,10 +223,6 @@ export default function AppScreen() {
           nim: nim,
           jurusan: jurusan,
         });
-        // HAPUS: Pengosongan form pindah ke ListHeader
-        // setNama('');
-        // setNim('');
-        // setJurusan('');
         Alert.alert('Sukses', 'Data mahasiswa berhasil ditambahkan.');
       } catch (error: any) {
         console.error("Error adding document: ", error);
@@ -242,18 +230,52 @@ export default function AppScreen() {
       }
     },
     []
-  ); // Dependency kosong, fungsi ini tidak akan pernah dibuat ulang
+  );
 
   // --- RENDER TAMPILAN ---
 
-  // 1. Tampilan Loading... (Tidak berubah)
+  if (loading) {
+    return (
       <View style={styles.container}>
-  // 2. Tampilan Jika BELUM Login (Tidak berubah)
+        <Text>Loading...</Text>
       </View>
-  // HAPUS: Definisi const ListHeader = () => (...) dari sini
+    );
+  }
 
-  // TAMBAH: Gunakan useMemo untuk membuat ListHeader agar tidak render ulang
-  // jika tidak perlu
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1, justifyContent: 'center' }}
+        >
+          <ScrollView contentContainerStyle={styles.authContainer}>
+            <Text style={styles.title}>Login / Register</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Password (min. 6 karakter)"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+            <View style={styles.buttonContainer}>
+              <Button title="Login" onPress={handleLogin} />
+              <Button title="Register" onPress={handleRegister} color="#841584" />
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
   const memoizedListHeader = useMemo(() => {
     return (
       <ListHeader
@@ -262,9 +284,8 @@ export default function AppScreen() {
         onAdd={handleAddMahasiswa}
       />
     );
-  }, [user, handleLogout, handleAddMahasiswa]); // Hanya buat ulang jika user berubah
+  }, [user, handleLogout, handleAddMahasiswa]);
 
-  // 3. Tampilan Jika SUDAH Login (Aplikasi Utama)
   return (
     <SafeAreaView style={styles.mainAppSafeArea}>
       <KeyboardAvoidingView
@@ -280,11 +301,8 @@ export default function AppScreen() {
               <Text>{item.nim} - {item.jurusan}</Text>
             </View>
           )}
-          // Masukkan form, dll, sebagai Header
-          ListHeaderComponent={memoizedListHeader} // Gunakan versi memoized
-          // Teks jika list kosong
+          ListHeaderComponent={memoizedListHeader}
           ListEmptyComponent={<Text style={{ paddingHorizontal: 16 }}>Belum ada data mahasiswa.</Text>}
-          // Padding di bawah list
           ListFooterComponent={<View style={{ height: 30 }} />}
         />
       </KeyboardAvoidingView>
@@ -292,16 +310,14 @@ export default function AppScreen() {
   );
 }
 
-// --- STYLESHEET --- (Tidak ada perubahan)
+// --- STYLESHEET ---
 const styles = StyleSheet.create({
-  // Style untuk loading dan login
   container: {
     flex: 1,
     justifyContent: 'center',
     padding: 16,
     backgroundColor: '#f5f5f5',
   },
-  // Style untuk SafeAreaView di halaman utama
   mainAppSafeArea: {
     flex: 1,
     backgroundColor: '#f5f5f5',
@@ -312,7 +328,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  // Style untuk header list
   headerContainer: {
     paddingHorizontal: 16,
     paddingTop: 10,
