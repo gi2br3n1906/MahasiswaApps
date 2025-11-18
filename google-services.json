@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "61296272751",
+    "project_id": "mahasiswaapp-e791f",
+    "storage_bucket": "mahasiswaapp-e791f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:61296272751:android:a1b02230e2846baf58f49a",
+        "android_client_info": {
+          "package_name": "com.mahasiswaapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbZQCYvpgxIi0XHR3_kziDR65uRN_SR34"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:61296272751:android:4a58a65d9972bb5e58f49a",
+        "android_client_info": {
+          "package_name": "com.mahasiswaapps"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbZQCYvpgxIi0XHR3_kziDR65uRN_SR34"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

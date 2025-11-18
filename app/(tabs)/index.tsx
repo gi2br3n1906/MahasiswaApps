@@ -10,90 +10,37 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-// --- IMPORT FIREBASE ---
-import { initializeApp, getApp, getApps } from 'firebase/app';
-import {
-  initializeAuth,
-  getReactNativePersistence,
-  onAuthStateChanged,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  User,
-} from 'firebase/auth';
-import {
-  getFirestore,
-  collection,
-  addDoc,
-  onSnapshot,
-  query,
-} from 'firebase/firestore';
-
-// --- IMPORT MMKV (Sintaks V4/V3) ---
+import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 import { createMMKV } from 'react-native-mmkv';
-export const storage = createMMKV();
 
-// -----------------------------------------------------------------
-// --- KONFIGURASI FIREBASE ---
-// -----------------------------------------------------------------
-const firebaseConfig = {
-  apiKey: "AIzaSyAuo809_Nsf9RyxtBVmkaq5gbkKDHCAb9k",
-  authDomain: "mahasiswaapp-e791f.firebaseapp.com",
-  projectId: "mahasiswaapp-e791f",
-  storageBucket: "mahasiswaapp-e791f.firebasestorage.app",
-  messagingSenderId: "61296272751",
-  appId: "1:61296272751:web:85eecd85ff0ce9d858f49a",
-  measurementId: "G-LT3NX05HE8"
+const storage = createMMKV();
+const PROFILE_STORAGE_KEY = 'user.profile';
+
+type UserProfile = {
+  uid: string;
+  email: string | null;
 };
 
-let app;
-if (!getApps().length) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApp();
-}
-
-// --- Adapter MMKV untuk Firebase Auth ---
-const mmkvStorageAdapter = {
-  setItem: (key: string, value: string) => {
-    storage.set(key, value);
-    return Promise.resolve();
-  },
-  getItem: (key: string) => {
-    const value = storage.getString(key);
-    return Promise.resolve(value !== undefined ? value : null);
-  },
-  removeItem: (key: string) => {
-    storage.delete(key);
-    return Promise.resolve();
-  },
-};
-
-// Inisialisasi Auth dengan ADAPTER MMKV
-const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(mmkvStorageAdapter),
-});
-const db = getFirestore(app);
-
-// -----------------------------------------------------------------
-// --- Komponen ListHeader (Untuk fix re-render input) ---
-// -----------------------------------------------------------------
 interface ListHeaderProps {
   userEmail: string | null;
   onLogout: () => void;
   onAdd: (nama: string, nim: string, jurusan: string) => void;
 }
 
-// Ini adalah komponen terpisah yang mengelola state form-nya sendiri
 const ListHeader: React.FC<ListHeaderProps> = ({ userEmail, onLogout, onAdd }) => {
   const [nama, setNama] = useState('');
   const [nim, setNim] = useState('');
   const [jurusan, setJurusan] = useState('');
 
   const handleAddPress = () => {
+    if (nama.trim() === '' || nim.trim() === '' || jurusan.trim() === '') {
+      Alert.alert('Error', 'Semua field data mahasiswa wajib diisi.');
+      return;
+    }
     onAdd(nama, nim, jurusan);
     setNama('');
     setNim('');
@@ -104,8 +51,6 @@ const ListHeader: React.FC<ListHeaderProps> = ({ userEmail, onLogout, onAdd }) =
     <View style={styles.headerContainer}>
       <Text style={styles.welcomeText}>Selamat Datang, {userEmail}</Text>
       <Button title="Logout" onPress={onLogout} color="red" />
-
-      {/* --- Form Tambah Data --- */}
       <View style={styles.formContainer}>
         <Text style={styles.subtitle}>Tambah Data Mahasiswa</Text>
         <TextInput
@@ -129,7 +74,6 @@ const ListHeader: React.FC<ListHeaderProps> = ({ userEmail, onLogout, onAdd }) =
         />
         <Button title="Simpan Data" onPress={handleAddPress} />
       </View>
-
       <Text style={styles.subtitle}>Daftar Mahasiswa</Text>
     </View>
   );
@@ -139,40 +83,53 @@ const ListHeader: React.FC<ListHeaderProps> = ({ userEmail, onLogout, onAdd }) =
 // --- KOMPONEN UTAMA ---
 // -----------------------------------------------------------------
 export default function AppScreen() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  // =================================================================
+  // BAGIAN 1: SEMUA HOOKS (useState, useEffect, etc.)
+  // =================================================================
+  const [initializing, setInitializing] = useState(true);
+  const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
+  const [mmkvProfile, setMmkvProfile] = useState<UserProfile | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mahasiswaList, setMahasiswaList] = useState<any[]>([]);
 
-  // --- LOGIC ---
-
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const subscriber = auth().onAuthStateChanged((currentUser) => {
       setUser(currentUser);
-      setLoading(false);
+      if (currentUser) {
+        const profileString = storage.getString(PROFILE_STORAGE_KEY);
+        if (profileString) {
+          setMmkvProfile(JSON.parse(profileString));
+        }
+      } else {
+        storage.remove(PROFILE_STORAGE_KEY);
+        setMmkvProfile(null);
+      }
+      if (initializing) {
+        setInitializing(false);
+      }
     });
-    return () => unsubscribe();
-  }, []);
+    return subscriber;
+  }, [initializing]);
 
   useEffect(() => {
     if (user) {
-      const q = query(collection(db, 'mahasiswa'));
-      const unsubscribe = onSnapshot(
-        q,
-        (snapshot) => {
-          const list: any[] = [];
-          snapshot.forEach((doc) => {
-            list.push({ id: doc.id, ...doc.data() });
-          });
-          setMahasiswaList(list);
-        },
-        (error) => {
-          console.error("Error fetching data: ", error);
-          Alert.alert("Error", "Gagal mengambil data dari Firestore.");
-        }
-      );
-      return () => unsubscribe();
+      const subscriber = firestore()
+        .collection('mahasiswa')
+        .onSnapshot(
+          (querySnapshot) => {
+            const list: any[] = [];
+            querySnapshot.forEach((doc) => {
+              list.push({ id: doc.id, ...doc.data() });
+            });
+            setMahasiswaList(list);
+          },
+          (error) => {
+            console.error("Error fetching data: ", error);
+            Alert.alert("Error", "Gagal mengambil data dari Firestore.");
+          }
+        );
+      return () => subscriber();
     } else {
       setMahasiswaList([]);
     }
@@ -184,8 +141,14 @@ export default function AppScreen() {
       return;
     }
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
-      Alert.alert('Sukses', 'Akun berhasil dibuat & otomatis login.');
+      const userCredential = await auth().createUserWithEmailAndPassword(email, password);
+      const userProfile: UserProfile = {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+      };
+      storage.set(PROFILE_STORAGE_KEY, JSON.stringify(userProfile));
+      setMmkvProfile(userProfile);
+      Alert.alert('Sukses', 'Akun berhasil dibuat & profil disimpan.');
     } catch (error: any) {
       Alert.alert('Error Registrasi', error.message);
     }
@@ -197,7 +160,15 @@ export default function AppScreen() {
       return;
     }
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await auth().signInWithEmailAndPassword(email, password);
+      const userProfile: UserProfile = {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+      };
+      storage.set(PROFILE_STORAGE_KEY, JSON.stringify(userProfile));
+      setMmkvProfile(userProfile);
+      setEmail('');
+      setPassword('');
     } catch (error: any) {
       Alert.alert('Error Login', error.message);
     }
@@ -205,7 +176,10 @@ export default function AppScreen() {
 
   const handleLogout = useCallback(async () => {
     try {
-      await signOut(auth);
+      await auth().signOut();
+      storage.remove(PROFILE_STORAGE_KEY);
+      setMmkvProfile(null);
+      Alert.alert('Sukses', 'Logout berhasil.');
     } catch (error: any) {
       Alert.alert('Error Logout', error.message);
     }
@@ -213,12 +187,8 @@ export default function AppScreen() {
 
   const handleAddMahasiswa = useCallback(
     async (nama: string, nim: string, jurusan: string) => {
-      if (nama === '' || nim === '' || jurusan === '') {
-        Alert.alert('Error', 'Semua field data mahasiswa wajib diisi.');
-        return;
-      }
       try {
-        await addDoc(collection(db, 'mahasiswa'), {
+        await firestore().collection('mahasiswa').add({
           nama: nama,
           nim: nim,
           jurusan: jurusan,
@@ -232,12 +202,25 @@ export default function AppScreen() {
     []
   );
 
-  // --- RENDER TAMPILAN ---
+  const memoizedListHeader = useMemo(() => {
+    return (
+      <ListHeader
+        userEmail={user?.email || mmkvProfile?.email || '...'}
+        onLogout={handleLogout}
+        onAdd={handleAddMahasiswa}
+      />
+    );
+  }, [user, mmkvProfile, handleLogout, handleAddMahasiswa]);
 
-  if (loading) {
+  // =================================================================
+  // BAGIAN 2: LOGIKA TAMPILAN (return) BERDASARKAN KONDISI
+  // =================================================================
+
+  if (initializing) {
     return (
       <View style={styles.container}>
-        <Text>Loading...</Text>
+        <ActivityIndicator size="large" />
+        <Text style={{ textAlign: 'center', marginTop: 10 }}>Memeriksa status login...</Text>
       </View>
     );
   }
@@ -275,16 +258,6 @@ export default function AppScreen() {
       </SafeAreaView>
     );
   }
-
-  const memoizedListHeader = useMemo(() => {
-    return (
-      <ListHeader
-        userEmail={user ? user.email : ''}
-        onLogout={handleLogout}
-        onAdd={handleAddMahasiswa}
-      />
-    );
-  }, [user, handleLogout, handleAddMahasiswa]);
 
   return (
     <SafeAreaView style={styles.mainAppSafeArea}>
